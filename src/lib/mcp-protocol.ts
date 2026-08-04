@@ -296,3 +296,58 @@ export async function handleMcpPost(c: Context<{ Bindings: Env; Variables: Vars 
   c.header("MCP-Protocol-Version", protocolVersion);
   return c.json(response);
 }
+
+// ========== 新增：GET 请求处理函数 ==========
+/**
+ * 处理 GET 请求，通过查询参数调用工具
+ * 例如: /mcp?tool=query_events&hours=6&type=app.open
+ * 无 tool 参数时返回服务状态
+ */
+export async function handleMcpGet(c: Context<{ Bindings: Env; Variables: Vars }>): Promise<Response> {
+  const sql = c.var.sql;
+  const offsetMinutes = c.var.offsetMinutes;
+  const query = c.req.query();
+
+  const toolName = query.tool;
+  if (!toolName) {
+    return c.json({ status: "ok", message: "MCP server ready" });
+  }
+
+  // 提取工具参数（除去 tool 本身，并尝试转换数字）
+  const args: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (key !== "tool" && value !== undefined) {
+      const num = Number(value);
+      args[key] = isNaN(num) ? value : num;
+    }
+  }
+
+  // 构造 JSON-RPC 请求
+  const message: JsonRpcMessage = {
+    jsonrpc: "2.0" as const,
+    method: "tools/call",
+    params: {
+      name: toolName,
+      arguments: args,
+    },
+    id: Date.now(),
+  };
+
+  try {
+    const result = await handleMcpRequest(message, sql, offsetMinutes);
+    if (result == null) {
+      return c.body(null, 202);
+    }
+    return c.json(result);
+  } catch (error) {
+    console.error("GET MCP call failed:", error);
+    return c.json(
+      {
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32603, message: "Internal error" },
+      },
+      500
+    );
+  }
+}
