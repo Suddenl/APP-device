@@ -1,8 +1,6 @@
 import type { Context } from "hono";
 import type postgres from "postgres";
 import type { Env, Vars, JsonRpcId, JsonRpcMessage } from "../types.ts";
-// 注意：你需要根据实际情况导入抖音查询函数，这里假设有 queryDouyin 和 listDouyinTypes
-// 如果暂时没有，可以先注释掉或创建占位函数
 import { queryDouyin, parseDouyinQueryFromToolArgs, buildDouyinSummaryText } from "./douyin-queries.ts";
 import { withRetry } from "./db.ts";
 
@@ -110,7 +108,7 @@ const LIST_DOUYIN_TYPES_TOOL = {
   },
 };
 
-// 辅助函数（与 mcp-protocol 相同，可复用，但为了独立，这里也包含）
+// 辅助函数
 function jsonRpcError(id: JsonRpcId, code: number, message: string, data?: unknown) {
   return {
     jsonrpc: "2.0" as const,
@@ -141,10 +139,8 @@ function getProtocolVersionFromHeaders(c: Context): string {
   return header || DEFAULT_MCP_PROTOCOL_VERSION;
 }
 
-// 抖音查询工具的具体实现（需替换为实际逻辑）
+// 抖音查询工具的具体实现
 async function callQueryDouyinTool(args: Record<string, unknown>, sql: postgres.Sql, offsetMinutes: number) {
-  // 此处应该调用你实际实现 parseDouyinQueryFromToolArgs 和 queryDouyin
-  // 如果暂时没有，可以先返回模拟数据或错误提示
   const parsed = parseDouyinQueryFromToolArgs(args);
   if (typeof parsed === "string") {
     return { content: [{ type: "text", text: parsed }], isError: true };
@@ -152,7 +148,7 @@ async function callQueryDouyinTool(args: Record<string, unknown>, sql: postgres.
   try {
     const result = await queryDouyin(parsed, sql, offsetMinutes);
     return {
-      content: [{ type: "text", text: buildDouyinSummaryText(result.records, result.total) }],
+      content: [{ type: "text", text: buildDouyinSummaryText(result.events, result.total) }],
       structuredContent: result,
       isError: false,
     };
@@ -165,7 +161,6 @@ async function callQueryDouyinTool(args: Record<string, unknown>, sql: postgres.
 async function callListDouyinTypesTool(sql: postgres.Sql) {
   try {
     const rows = await withRetry(() =>
-      // 假设抖音数据表名为 douyin_events，字段 type
       sql.unsafe("SELECT DISTINCT type FROM douyin_events ORDER BY type")
     );
     const types = rows.map((r: Record<string, unknown>) => String(r.type));
@@ -180,8 +175,8 @@ async function callListDouyinTypesTool(sql: postgres.Sql) {
   }
 }
 
-// 核心请求处理器（改为处理抖音工具）
-async function handleDouyinRequest(message: JsonRpcMessage, sql: postgres.Sql, offsetMinutes: number) {
+// 核心请求处理器（导出供路由层调用）
+export async function handleDouyinRequest(message: JsonRpcMessage, sql: postgres.Sql, offsetMinutes: number) {
   const id = (message.id ?? null) as JsonRpcId;
   const method = typeof message.method === "string" ? message.method : "";
   const params = (message.params && typeof message.params === "object")
@@ -251,6 +246,7 @@ export async function handleDouyinPost(c: Context<{ Bindings: Env; Variables: Va
     return c.json(jsonRpcError(null, -32700, "Parse error"), 400);
   }
 
+  // Batch handling
   if (Array.isArray(body)) {
     if (!body.length) {
       c.header("MCP-Protocol-Version", protocolVersion);
@@ -277,6 +273,7 @@ export async function handleDouyinPost(c: Context<{ Bindings: Env; Variables: Va
     return c.json(responses);
   }
 
+  // Single message
   if (!body || typeof body !== "object") {
     c.header("MCP-Protocol-Version", protocolVersion);
     return c.json(jsonRpcError(null, -32600, "Invalid Request"), 400);
