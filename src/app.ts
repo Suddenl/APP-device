@@ -6,6 +6,7 @@ import { createSql } from "./lib/db.ts";
 import { parseOffsetEnv } from "./lib/timezone.ts";
 import { events } from "./routes/events.ts";
 import { mcp } from "./routes/mcp.ts";
+import { douyin } from "./routes/douyin.ts";   // 🆕 导入抖音路由
 import type postgres from "postgres";
 
 export type AppOptions = {
@@ -20,6 +21,13 @@ export function createApp(options?: AppOptions) {
 
   // CORS
   app.use("*", corsMiddleware);
+
+  // ========== 新增：调试中间件（可选，建议保留） ==========
+  app.use("*", async (c, next) => {
+    console.log(`[DEBUG] ${c.req.method} ${c.req.url}`);
+    await next();
+  });
+  // ==================================================
 
   // Global error handler
   app.onError((err, c) => {
@@ -65,7 +73,8 @@ export function createApp(options?: AppOptions) {
     return group;
   })());
 
-  app.route("/mcp", mcp);
+  app.route("/mcp", mcp);          // 原有 MCP 服务（设备事件）
+  app.route("/douyin", douyin);    // 🆕 抖音 MCP 服务
 
   return app;
 }
