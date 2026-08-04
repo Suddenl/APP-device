@@ -8,64 +8,32 @@ const douyin = new Hono<{ Bindings: Env; Variables: Vars }>();
 douyin.get("/", handleDouyinGet);
 douyin.post("/", handleDouyinPost);
 
-// /events 路径：兼容 iOS 快捷指令
+// MCP 查询路径（供 Kelivo 和浏览器测试调用）
 douyin.get("/events", handleDouyinGet);
 douyin.post("/events", async (c) => {
-  // 1. 读取原始请求体
-  const bodyText = await c.req.text();
-  console.log("[DOUYIN /events POST] Raw body:", bodyText);
+  // ... 这里保留你之前写好的转换逻辑（把简单格式转成 JSON-RPC 查询）...
+  // （就是你之前写的那一大段处理 /events POST 的代码）
+});
 
-  // 2. 尝试解析 JSON
-  let bodyJson: any;
-  try {
-    bodyJson = JSON.parse(bodyText);
-  } catch (e) {
-    return c.json({
-      jsonrpc: "2.0",
-      id: null,
-      error: { code: -32700, message: "Parse error: Invalid JSON" }
-    }, 400);
-  }
-
-  // 3. 如果是简单格式 { type: "xxx", value: "xxx" }，转换为 JSON-RPC
-  // 3a. 如果有 tool 字段，直接使用
-  // 3b. 如果有 type 或 value 字段，默认调用 query_douyin
-  let toolName = bodyJson.tool || "query_douyin";
-  let args = bodyJson.args || {};
-
-  // 如果请求体直接包含 type 或 value，将其作为查询参数
-  if (bodyJson.type || bodyJson.value) {
-    args = {
-      type: bodyJson.type || "",
-      value: bodyJson.value || "",
-      hours: bodyJson.hours || 6,
-      limit: bodyJson.limit || 100
-    };
-  }
-
-  // 构造 JSON-RPC 请求（自动生成 id）
-  const jsonRpcRequest = {
-    jsonrpc: "2.0",
-    method: "tools/call",
-    params: {
-      name: toolName,
-      arguments: args
-    },
-    id: Date.now()  // 自动生成 id
-  };
-
+// 🆕 实时记录路径（供 iOS 快捷指令“打开/关闭抖音”时调用）
+douyin.post("/log", async (c) => {
   const sql = c.var.sql;
-  const offsetMinutes = c.var.offsetMinutes;
+  const body = await c.req.json();
+  
+  const type = body.type || 'unknown';
+  const value = body.value || null;
+  
+  console.log(`[DOUYIN LOG] 记录事件: type=${type}, value=${value}`);
+  
   try {
-    const result = await handleDouyinRequest(jsonRpcRequest, sql, offsetMinutes);
-    return c.json(result);
+    await sql.unsafe(
+      'INSERT INTO douyin_events (type, value, ts) VALUES ($1, $2, NOW())',
+      [type, value]
+    );
+    return c.json({ status: "ok", message: "Event logged successfully" });
   } catch (err) {
-    console.error("[DOUYIN /events POST] Error:", err);
-    return c.json({
-      jsonrpc: "2.0",
-      id: null,
-      error: { code: -32603, message: "Internal error" }
-    }, 500);
+    console.error("[DOUYIN LOG] 写入失败:", err);
+    return c.json({ status: "error", message: "Failed to log event" }, 500);
   }
 });
 
