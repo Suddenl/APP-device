@@ -6,7 +6,7 @@ import { createSql } from "./lib/db.ts";
 import { parseOffsetEnv } from "./lib/timezone.ts";
 import { events } from "./routes/events.ts";
 import { mcp } from "./routes/mcp.ts";
-import { douyin } from "./routes/douyin.ts";   // 🆕 导入抖音路由
+import { douyin } from "./routes/douyin.ts";   // 导入抖音路由
 import type postgres from "postgres";
 
 export type AppOptions = {
@@ -22,12 +22,11 @@ export function createApp(options?: AppOptions) {
   // CORS
   app.use("*", corsMiddleware);
 
-  // ========== 新增：调试中间件（可选，建议保留） ==========
+  // 可选调试中间件（打印所有请求）
   app.use("*", async (c, next) => {
     console.log(`[DEBUG] ${c.req.method} ${c.req.url}`);
     await next();
   });
-  // ==================================================
 
   // Global error handler
   app.onError((err, c) => {
@@ -40,10 +39,14 @@ export function createApp(options?: AppOptions) {
     return c.json({ error: "Not found" }, 404);
   });
 
-  // DB + timezone injection
+  // DB + timezone injection（会自动创建 events 表）
   app.use("*", async (c, next) => {
     if (!sqlInstance) {
       const databaseUrl = c.env.DATABASE_URL ?? "";
+      if (!databaseUrl) {
+        console.error("DATABASE_URL is not set in environment variables");
+        return c.json({ error: "Database configuration missing" }, 500);
+      }
       sqlInstance = createSql(databaseUrl, options?.postgresOptions);
       await sqlInstance.unsafe(`
         CREATE TABLE IF NOT EXISTS events (
@@ -65,7 +68,8 @@ export function createApp(options?: AppOptions) {
     await next();
   });
 
-  // Routes
+  // 路由挂载
+  // 小红书/设备事件路由
   app.route("/events", (() => {
     const group = new Hono<{ Bindings: Env; Variables: Vars }>();
     group.use("*", authMiddleware);
@@ -73,8 +77,11 @@ export function createApp(options?: AppOptions) {
     return group;
   })());
 
-  app.route("/mcp", mcp);          // 原有 MCP 服务（设备事件）
-  app.route("/douyin", douyin);    // 🆕 抖音 MCP 服务
+  // MCP 主路由（原有设备事件 MCP）
+  app.route("/mcp", mcp);
+
+  // 抖音 MCP 路由（新增）
+  app.route("/douyin", douyin);
 
   return app;
 }
