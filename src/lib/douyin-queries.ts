@@ -49,7 +49,7 @@ export function parseDouyinQuery(
     since = new Date(String(rawSince));
     if (Number.isNaN(since.getTime())) return fail("Invalid 'since' format");
   } else if (allowDefaultHours) {
-    since = new Date(Date.now() - 6 * 3600_000);
+    since = new Date(Date.now() - 12 * 3600_000);  // ✅ 已改为 12 小时
   } else {
     return fail("Provide 'hours' or 'since'");
   }
